@@ -7,7 +7,7 @@ import fitz  # PyMuPDF
 from datetime import datetime, timedelta
 
 # ✅ إعداد صفحة Streamlit
-st.set_page_config(page_title="⚖️ القاضي الذكي", layout="centered")
+st.set_page_config(page_title="⚖️ Smart Judge | القاضي الذكي", layout="centered")
 
 # تحميل المتغيرات البيئية
 load_dotenv()
@@ -17,22 +17,21 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 if "start_time" not in st.session_state:
     st.session_state.start_time = datetime.utcnow()
 
-# تحديد نهاية الوقت (تقدر تغيره من 10 ثواني إلى ساعة بعدين)
+# تحديد نهاية الوقت
 end_time = st.session_state.start_time + timedelta(hours=1)
-
-# حساب الوقت المتبقي
 remaining_time = end_time - datetime.utcnow()
 
 if remaining_time.total_seconds() > 0:
     mins, secs = divmod(int(remaining_time.total_seconds()), 60)
-    st.info(f"🕒 تبقى من وقتك المجاني: {mins} دقيقة و {secs} ثانية")
+    st.info(f"🕒 Free time left: {mins} minutes and {secs} seconds")
 else:
-    st.error("⛔ انتهى وقت الاستخدام المجاني. الرجاء الترقية لمواصلة الاستخدام.")
-    st.stop()  # إيقاف التطبيق مؤقتًا
+    st.error("⛔ Your free usage time is over. Please upgrade to continue.")
+    st.stop()
 
-# 🧠 دالة استدعاء GPT لإصدار الحكم
-def ask_judge_agent(user_input):
-    prompt = f"""
+# 🧠 دالة استدعاء GPT
+def ask_judge_agent(user_input, lang):
+    if lang == "Arabic":
+        prompt = f"""
 أنت قاضٍ مدني محترف تصدر الأحكام بأسلوب قانوني منضبط.
 اقرأ القضية التالية التي قدمها المستخدم، ثم أصدِر حكمك الكامل متضمنًا:
 - القرار القضائي
@@ -44,6 +43,20 @@ def ask_judge_agent(user_input):
 
 الحكم:
 """
+    else:
+        prompt = f"""
+You are a professional civil judge. 
+Read the following case submitted by the user and issue a full judgment including:
+- The final decision
+- Legal and factual reasoning
+- Reference to precedents if possible
+
+Case text:
+{user_input}
+
+Judgment:
+"""
+
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4",
@@ -52,7 +65,7 @@ def ask_judge_agent(user_input):
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        return f"❌ خطأ أثناء الاتصال بـ OpenAI:\n{e}"
+        return f"❌ Error connecting to OpenAI:\n{e}"
 
 # 📄 قراءة ملفات PDF
 def extract_text_from_pdf(uploaded_file):
@@ -68,20 +81,24 @@ def extract_text_from_docx(uploaded_file):
     return "\n".join([para.text for para in doc.paragraphs])
 
 # 🖥️ واجهة Streamlit
-st.title("⚖️ القاضي الذكي")
+st.title("⚖️ Smart Judge | القاضي الذكي")
+
+# ✅ اختيار اللغة
+lang = st.radio("🌐 Choose Language | اختر اللغة:", ["English", "Arabic"])
 
 # اختيار طريقة الإدخال
-input_method = st.radio("📎 اختر طريقة إدخال القضية:", ["كتابة يدوية", "رفع ملف PDF / Word"])
+input_method = st.radio("📎 Select input method:", ["Manual typing", "Upload PDF / Word"])
 
 user_input = ""
 
 # الكتابة اليدوية
-if input_method == "كتابة يدوية":
-    user_input = st.text_area("✍️ اكتب هنا وقائع القضية أو النزاع:", height=300)
+if input_method == "Manual typing":
+    placeholder = "✍️ Write your case here..." if lang == "English" else "✍️ اكتب هنا وقائع القضية أو النزاع:"
+    user_input = st.text_area(placeholder, height=300)
 
 # رفع الملفات
 else:
-    uploaded_file = st.file_uploader("📄 ارفع ملف PDF أو Word", type=["pdf", "docx"])
+    uploaded_file = st.file_uploader("📄 Upload PDF or Word file", type=["pdf", "docx"])
     if uploaded_file:
         if uploaded_file.type == "application/pdf":
             user_input = extract_text_from_pdf(uploaded_file)
@@ -92,42 +109,42 @@ else:
             user_input = extract_text_from_docx(uploaded_file)
 
         if user_input:
-            st.success("✅ تم استخراج نص القضية بنجاح.")
-            st.text_area("📄 نص الدعوى المستخرجة:", user_input, height=300)
+            st.success("✅ Case text extracted successfully.")
+            st.text_area("📄 Extracted case text:", user_input, height=300)
 
 # 🧠 إصدار الحكم
-if st.button("🧠 إصدار الحكم"):
+if st.button("🧠 Get Judgment"):
     if not user_input.strip():
-        st.warning("يرجى كتابة أو رفع نص القضية.")
+        st.warning("Please enter or upload a case text." if lang == "English" else "يرجى كتابة أو رفع نص القضية.")
     else:
-        with st.spinner("📚 يتم تحليل القضية..."):
-            result = ask_judge_agent(user_input)
-            st.session_state['الحكم'] = result
-            st.success("✅ تم إصدار الحكم.")
-            st.subheader("📜 الحكم الصادر:")
-            st.text_area("📜 الناتج:", result, height=400)
+        with st.spinner("📚 Analyzing case..." if lang == "English" else "📚 يتم تحليل القضية..."):
+            result = ask_judge_agent(user_input, lang)
+            st.session_state['judgment'] = result
+            st.success("✅ Judgment issued.")
+            st.subheader("📜 Judgment:")
+            st.text_area("📜 Result:", result, height=400)
 
 # 🔄 التفاعل مع الحكم
-if "الحكم" in st.session_state:
+if "judgment" in st.session_state:
     st.markdown("---")
-    st.subheader("🔄 هل توافق على الحكم؟ أو لديك توضيح إضافي؟")
+    st.subheader("🔄 Do you agree with the judgment? Add a clarification:" if lang == "English" else "🔄 هل توافق على الحكم؟ أو لديك توضيح إضافي؟")
 
     with st.form("response_form"):
-        user_reply = st.text_area("🗣️ اكتب ملاحظتك أو اعتراضك هنا:", height=150)
-        submitted = st.form_submit_button("📨 إرسال للمراجعة")
+        user_reply = st.text_area("🗣️ Your comment:" if lang == "English" else "🗣️ اكتب ملاحظتك أو اعتراضك هنا:", height=150)
+        submitted = st.form_submit_button("📨 Submit")
 
         if submitted:
-            with st.spinner("🤖 يتم مراجعة ملاحظتك من قبل القاضي الذكي..."):
+            with st.spinner("🤖 Reviewing your comment..." if lang == "English" else "🤖 يتم مراجعة ملاحظتك..."):
                 follow_up_prompt = f"""
-قمت بإصدار الحكم التالي:
-{st.session_state['الحكم']}
+Previous judgment:
+{st.session_state['judgment']}
 
-ثم قدم المستخدم التوضيح التالي:
+User comment:
 {user_reply}
 
-رجاءً راجع التوضيح، وأعد صياغة الحكم أو فسّره بشكل إضافي إذا لزم الأمر.
+Please review and revise or clarify the judgment if needed.
 """
-                follow_up = ask_judge_agent(follow_up_prompt)
-                st.success("✅ تم مراجعة الملاحظة.")
-                st.subheader("📌 رد القاضي الذكي:")
-                st.text_area("📬 الرد:", follow_up, height=300)
+                follow_up = ask_judge_agent(follow_up_prompt, lang)
+                st.success("✅ Review complete.")
+                st.subheader("📌 Judge's Response:")
+                st.text_area("📬 Response:", follow_up, height=300)
